@@ -5,7 +5,6 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:worker_app/main.dart';
@@ -15,9 +14,12 @@ void main() {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
 
+    // Wait for async initialization to complete
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+
     // Verify that the app title is displayed.
     expect(find.text('Whisper Orchard Node'), findsOneWidget);
-    
+
     // Verify that both tabs are present.
     expect(find.text('ダッシュボード'), findsOneWidget);
     expect(find.text('モデル管理'), findsOneWidget);
