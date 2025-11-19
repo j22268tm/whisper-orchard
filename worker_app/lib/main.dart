@@ -56,12 +56,12 @@ class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
   int _pendingJobs = 0;
   int _avgLatency = 0;
   DateTime? _lastRequestTime;
-  final List<int> _latencyHistory = [];
+  List<int> _latencyHistory = [];
 
   // ダウンロード進捗管理
-  final Map<String, double> _downloadProgress = {};
-  final Set<String> _downloadedModels = {};
-  final Set<String> _downloadCompleted = {};
+  Map<String, double> _downloadProgress = {};
+  Set<String> _downloadedModels = {};
+  Set<String> _downloadCompleted = {};
 
   // グラフ用データ
   List<FlSpot> _graphSpots = [];
