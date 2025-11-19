@@ -208,7 +208,7 @@ class DashboardScreen extends StatelessWidget {
                       dotData: const FlDotData(show: false),
                       belowBarData: BarAreaData(
                         show: true,
-                        color: Colors.indigoAccent.withOpacity(0.2),
+                        color: Colors.indigoAccent.withValues(alpha: 0.2),
                       ),
                     ),
                   ],
@@ -265,7 +265,7 @@ class DashboardScreen extends StatelessWidget {
         boxShadow: [
           if (isLive)
             BoxShadow(
-              color: color.withOpacity(0.4),
+              color: color.withValues(alpha: 0.4),
               blurRadius: 10,
               spreadRadius: 1,
             )
@@ -287,7 +287,7 @@ class DashboardScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: color.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, color: color, size: 20),
