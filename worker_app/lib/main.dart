@@ -1,12 +1,11 @@
 import 'dart:io';
-// import 'dart:typed_data';
 import 'package:flutter/material.dart';
-// import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart' as shelf_router;
-import 'package:whisper_flutter_new/whisper_flutter_new.dart';
+import 'package:whisper_ggml/whisper_ggml.dart';
 
 void main() {
   runApp(const MyApp());
@@ -23,8 +22,9 @@ class _MyAppState extends State<MyApp> {
   String _statusLog = "初期化中...";
   String _ipAddress = "取得中...";
 
-  // Whisperのインスタンス
-  late Whisper _whisper;
+  final WhisperController _whisperController = WhisperController();
+  WhisperModel _model = WhisperModel.base;
+  List<WhisperModel> _availableModels = [];
   bool _isModelLoaded = false;
 
   @override
@@ -33,22 +33,26 @@ class _MyAppState extends State<MyApp> {
     _initWhisper();
   }
 
-  // モデル準備
+  // モデル準備（assets から配置 or ダウンロード）
   Future<void> _initWhisper() async {
     try {
       setState(() => _statusLog = "モデル準備中...");
 
-      final Directory appSupportDir = await getApplicationSupportDirectory();
+      // 利用可能なモデルを assets から検出し、既定を選択
+      _availableModels = await _discoverAvailableModels();
+      if (_availableModels.isNotEmpty) {
+        _model = _availableModels.contains(WhisperModel.base)
+            ? WhisperModel.base
+            : _availableModels.first;
+      }
 
-      // Whisperの初期化
-      _whisper = Whisper(
-        model: WhisperModel.base,
-        modelDir: appSupportDir.path,
-      );
+      // 選択中モデルを準備
+      await _prepareModel(_model);
 
-      // バージョン確認
+      // バージョン確認（任意）
       try {
-        var version = await _whisper.getVersion();
+        final w = Whisper(model: _model);
+        final version = await w.getVersion();
         debugPrint("Whisper Version: $version");
       } catch (e) {
         debugPrint("Version check skipped: $e");
@@ -66,6 +70,35 @@ class _MyAppState extends State<MyApp> {
         _statusLog = "モデル読込エラー";
       });
       debugPrint(e.toString());
+    }
+  }
+
+  Future<List<WhisperModel>> _discoverAvailableModels() async {
+    final List<WhisperModel> found = [];
+    for (final m in WhisperModel.values) {
+      try {
+        await rootBundle.load('assets/ggml-${m.modelName}.bin');
+        found.add(m);
+      } catch (_) {
+        // ignore
+      }
+    }
+    return found;
+  }
+
+  Future<void> _prepareModel(WhisperModel model) async {
+    try {
+      final bytes = await rootBundle.load('assets/ggml-${model.modelName}.bin');
+      final modelPath = await _whisperController.getPath(model);
+      final file = File(modelPath);
+      await file.create(recursive: true);
+      await file.writeAsBytes(
+        bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+      );
+      debugPrint('Model placed from assets: $modelPath');
+    } catch (_) {
+      final path = await _whisperController.downloadModel(model);
+      debugPrint('Model downloaded to: $path');
     }
   }
 
@@ -118,28 +151,29 @@ class _MyAppState extends State<MyApp> {
 
         // 一時ファイルに保存
         final tempDir = await getTemporaryDirectory();
-        final audioPath = '${tempDir.path}/temp_audio.wav';
+        final audioPath = '${tempDir.path}/temp_audio';
         final audioFile = File(audioPath);
         await audioFile.writeAsBytes(payload);
 
         setState(() => _statusLog = "推論中...");
         final stopwatch = Stopwatch()..start();
 
-        // Whisper実行
-        final res = await _whisper.transcribe(
-          transcribeRequest: TranscribeRequest(
-            audio: audioPath,
-            language: 'ja',
-            isTranslate: false,
-            isNoTimestamps: true,
-            threads: 4,
-          ),
+        // Whisper実行（whisper_ggml のコントローラを使用）
+        final result = await _whisperController.transcribe(
+          model: _model,
+          audioPath: audioPath,
+          lang: 'ja',
         );
 
         stopwatch.stop();
         final time = stopwatch.elapsedMilliseconds;
 
-        final String textResult = res.text;
+        if (result == null) {
+          setState(() => _statusLog = "エラー: 変換に失敗");
+          return Response.internalServerError(body: "Transcription failed");
+        }
+
+        final String textResult = result.transcription.text;
 
         setState(() => _statusLog = "完了 (${time}ms)\n$textResult");
 
@@ -184,8 +218,43 @@ class _MyAppState extends State<MyApp> {
             padding: const EdgeInsets.all(20.0),
             child: Column(
               children: [
+                if (_availableModels.isNotEmpty)
+                  Row(
+                    children: [
+                      const Text('モデル選択:'),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButton<WhisperModel>(
+                          isExpanded: true,
+                          value: _model,
+                          items: _availableModels
+                              .map(
+                                (m) => DropdownMenuItem(
+                                  value: m,
+                                  child: Text('ggml-${m.modelName}.bin'),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (m) async {
+                            if (m == null) return;
+                            setState(() {
+                              _model = m;
+                              _isModelLoaded = false;
+                              _statusLog = 'モデル切替中...';
+                            });
+                            await _prepareModel(m);
+                            setState(() {
+                              _isModelLoaded = true;
+                              _statusLog = 'モデルロード完了 (ggml-${m.modelName}.bin)';
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 16),
                 Icon(
-                  _isModelLoaded ? Icons.mic : Icons.hourglass_empty,
+                  _isModelLoaded ? Icons.speaker_notes : Icons.hourglass_empty,
                   size: 80,
                   color: _isModelLoaded ? Colors.green : Colors.grey,
                 ),
@@ -198,6 +267,20 @@ class _MyAppState extends State<MyApp> {
                   ),
                 ),
                 const SizedBox(height: 20),
+
+                // ElevatedButton(
+                //   onPressed: _isModelLoaded
+                //       ? () async {
+                //           final Directory appSupportDir =
+                //               await getApplicationSupportDirectory();
+                //           await _deleteModelFiles(
+                //               WhisperModel.base, appSupportDir.path);
+                //         }
+                //       : null,
+                //   child: const Text("Delete Model Files"),
+                // ),
+                const SizedBox(height: 20),
+
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),

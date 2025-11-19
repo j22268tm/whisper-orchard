@@ -74,3 +74,5 @@ uploads/
 models/
 *.bin
 *.tflite
+
+testing_area/
