@@ -1,29 +1,48 @@
-# .gitignoreはAIに書かせたのでミスがあるかもしれないです。
-
-# --- General / OS ---
+# ==========================
+# General / OS / Filesystem
+# ==========================
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 *.log
+*.swp
+*.swo
 
-# --- VS Code ---
+# ==========================
+# Editor / IDE
+# ==========================
+# VS Code
 .vscode/
 *.code-workspace
-# プロジェクト固有の設定を共有したい場合は .vscode/settings.json などは除外しない運用もありますが、
-# 個人開発ならまるごと無視でOKです。
 
-# --- Python (Master Server) ---
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+*.class
+
+# Atom / Sublime / Others
+.atom/
+.buildlog/
+.history/
+.svn/
+
+# ==========================
+# Python (Master Server)
+# ==========================
 # Byte-compiled / Optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual Environments (仮想環境)
-# ※環境名が venv, env, .venv のどれでも対応できるようにしています
+# Virtual Environments
 venv/
 env/
 .venv/
 
-# Environment Variables (APIキーなどは絶対にコミットしない！)
+# Environment Variables
 .env
 .env.local
 
@@ -31,48 +50,56 @@ env/
 instance/
 .webassets-cache
 
-# --- Flutter / Dart (Worker App) ---
+# ==========================
+# Flutter / Dart (Worker App)
+# ==========================
 # Libraries and tools
 .dart_tool/
 .packages
 .pub/
 .pub-cache/
+.flutter-plugins
+.flutter-plugins-dependencies
 
-# Build artifacts (ビルド生成物)
-build/
-worker_app/build/
+# Build artifacts (サブディレクトリのbuildも含む)
+**/build/
+**/coverage/
 
-# Android specific (Flutter)
-# 自分のPCのSDKパスなどが書かれるので絶対に無視する
+# --- Android Specific ---
 **/android/local.properties
 **/android/key.properties
 
-# Android Studio / Gradle files
-.gradle/
-.idea/
+# Gradle build related
 **/android/.gradle
 **/android/app/build
 **/android/captures
+
+# Symbols and Maps
+app.*.symbols
+app.*.map.json
+
+# gradlew / gradlew.bat
 **/android/gradlew
 **/android/gradlew.bat
-# gradlew は本来コミットすべきですが、Flutterプロジェクトでは自動生成されるため
-# 環境差異を避けるために無視する場合もあります。
-# ただし、チーム開発なら gradlew はコミットしたほうが安全です。
-# 今回は一人開発なので、トラブル回避で無視リストには入れず、local.propertiesだけ徹底的に無視します。
 
-# iOS specific (Flutter)
+# --- iOS Specific ---
 **/ios/Flutter/Generated.xcconfig
 **/ios/Flutter/flutter_export_environment.sh
 **/ios/.generated/
+**/ios/Flutter/.last_build_id
 
-# --- Whisper / Large Files ---
-# 音声データやモデルファイルなどの巨大ファイル
+# ==========================
+# Media / Large Files / Data
+# ==========================
+# Audio / Binary
 *.mp3
 *.wav
 *.m4a
-uploads/
-models/
 *.bin
 *.tflite
 
+# Project specific
+uploads/
+models/
 testing_area/
+migrate_working_dir/
