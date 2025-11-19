@@ -22,10 +22,26 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
   // 利用可能なモデル情報 (Hugging Face whisper.cpp公式リスト)
   final List<Map<String, dynamic>> availableModels = [
     // Tiny models
-    {'name': 'tiny', 'size': '75 MB', 'description': '最小・最速 (多言語)'},
-    {'name': 'tiny-q5_1', 'size': '31 MB', 'description': '最小・最速 (量子化Q5_1)'},
-    {'name': 'tiny-q8_0', 'size': '42 MB', 'description': '最小・最速 (量子化Q8_0)'},
-    {'name': 'tiny.en', 'size': '75 MB', 'description': '最小・最速 (英語専用)'},
+    {
+      'name': 'tiny',
+      'size': '75 MB',
+      'description': '最小・最速 (多言語)',
+    },
+    {
+      'name': 'tiny-q5_1',
+      'size': '31 MB',
+      'description': '最小・最速 (量子化Q5_1)',
+    },
+    {
+      'name': 'tiny-q8_0',
+      'size': '42 MB',
+      'description': '最小・最速 (量子化Q8_0)',
+    },
+    {
+      'name': 'tiny.en',
+      'size': '75 MB',
+      'description': '最小・最速 (英語専用)',
+    },
     {
       'name': 'tiny.en-q5_1',
       'size': '31 MB',
@@ -38,10 +54,26 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
     },
 
     // Base models
-    {'name': 'base', 'size': '142 MB', 'description': '小型・高速 (多言語)'},
-    {'name': 'base-q5_1', 'size': '57 MB', 'description': '小型・高速 (量子化Q5_1)'},
-    {'name': 'base-q8_0', 'size': '78 MB', 'description': '小型・高速 (量子化Q8_0)'},
-    {'name': 'base.en', 'size': '142 MB', 'description': '小型・高速 (英語専用)'},
+    {
+      'name': 'base',
+      'size': '142 MB',
+      'description': '小型・高速 (多言語)',
+    },
+    {
+      'name': 'base-q5_1',
+      'size': '57 MB',
+      'description': '小型・高速 (量子化Q5_1)',
+    },
+    {
+      'name': 'base-q8_0',
+      'size': '78 MB',
+      'description': '小型・高速 (量子化Q8_0)',
+    },
+    {
+      'name': 'base.en',
+      'size': '142 MB',
+      'description': '小型・高速 (英語専用)',
+    },
     {
       'name': 'base.en-q5_1',
       'size': '57 MB',
@@ -54,7 +86,11 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
     },
 
     // Small models
-    {'name': 'small', 'size': '466 MB', 'description': '中型・バランス型 (多言語)'},
+    {
+      'name': 'small',
+      'size': '466 MB',
+      'description': '中型・バランス型 (多言語)',
+    },
     {
       'name': 'small-q5_1',
       'size': '181 MB',
@@ -65,7 +101,11 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
       'size': '252 MB',
       'description': '中型・バランス型 (量子化Q8_0)',
     },
-    {'name': 'small.en', 'size': '466 MB', 'description': '中型・バランス型 (英語専用)'},
+    {
+      'name': 'small.en',
+      'size': '466 MB',
+      'description': '中型・バランス型 (英語専用)',
+    },
     {
       'name': 'small.en-q5_1',
       'size': '181 MB',
@@ -83,7 +123,11 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
     },
 
     // Medium models
-    {'name': 'medium', 'size': '1.5 GB', 'description': '大型・高精度 (多言語)'},
+    {
+      'name': 'medium',
+      'size': '1.5 GB',
+      'description': '大型・高精度 (多言語)',
+    },
     {
       'name': 'medium-q5_0',
       'size': '514 MB',
@@ -94,7 +138,11 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
       'size': '785 MB',
       'description': '大型・高精度 (量子化Q8_0)',
     },
-    {'name': 'medium.en', 'size': '1.5 GB', 'description': '大型・高精度 (英語専用)'},
+    {
+      'name': 'medium.en',
+      'size': '1.5 GB',
+      'description': '大型・高精度 (英語専用)',
+    },
     {
       'name': 'medium.en-q5_0',
       'size': '514 MB',
@@ -107,8 +155,16 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
     },
 
     // Large models
-    {'name': 'large-v1', 'size': '2.9 GB', 'description': '最大精度 v1 (多言語)'},
-    {'name': 'large-v2', 'size': '2.9 GB', 'description': '最大精度 v2 (多言語)'},
+    {
+      'name': 'large-v1',
+      'size': '2.9 GB',
+      'description': '最大精度 v1 (多言語)',
+    },
+    {
+      'name': 'large-v2',
+      'size': '2.9 GB',
+      'description': '最大精度 v2 (多言語)',
+    },
     {
       'name': 'large-v2-q5_0',
       'size': '1.1 GB',
@@ -119,7 +175,11 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
       'size': '1.5 GB',
       'description': '最大精度 v2 (量子化Q8_0)',
     },
-    {'name': 'large-v3', 'size': '2.9 GB', 'description': '最大精度 v3 (多言語)'},
+    {
+      'name': 'large-v3',
+      'size': '2.9 GB',
+      'description': '最大精度 v3 (多言語)',
+    },
     {
       'name': 'large-v3-q5_0',
       'size': '1.1 GB',
@@ -127,7 +187,11 @@ class _ModelManagementScreenState extends State<ModelManagementScreen> {
     },
 
     // Large-v3-turbo models
-    {'name': 'large-v3-turbo', 'size': '1.5 GB', 'description': '最新高速版 (多言語)'},
+    {
+      'name': 'large-v3-turbo',
+      'size': '1.5 GB',
+      'description': '最新高速版 (多言語)',
+    },
     {
       'name': 'large-v3-turbo-q5_0',
       'size': '547 MB',
