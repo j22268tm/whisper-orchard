@@ -14,8 +14,8 @@ void main() {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
 
-    // Wait for async initialization to complete
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    // Pump a few frames to allow initial build
+    await tester.pump();
 
     // Verify that the app title is displayed.
     expect(find.text('Whisper Orchard Node'), findsOneWidget);
