@@ -15,11 +15,16 @@ on:
       - '.github/workflows/worker_app_ci.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # Linting job - Check for static analysis issues
   lint:
     name: Lint Analysis
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: worker_app
@@ -53,6 +58,8 @@ jobs:
   format:
     name: Code Formatting Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: worker_app
@@ -77,6 +84,8 @@ jobs:
   test:
     name: Unit & Widget Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: worker_app
@@ -116,6 +125,8 @@ jobs:
   build-android-debug:
     name: Android Debug Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: worker_app
@@ -153,6 +164,8 @@ jobs:
   build-android-release:
     name: Android Release Build (R8 Verification)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: worker_app
@@ -199,6 +212,8 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [lint, format, test, build-android-debug, build-android-release]
     if: always()
     
