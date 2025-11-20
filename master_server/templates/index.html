@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper Orchard Dashboard</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="bg-blue-50 text-gray-800 h-screen flex flex-col overflow-hidden">
+
+    <div id="app" class="flex h-full" v-cloak>
+        
+        <!-- Sidebar -->
+        <aside class="w-64 bg-white shadow-xl z-20 flex flex-col">
+            <div class="p-6 border-b border-gray-100">
+                <h1 class="text-2xl font-bold text-orange-600 flex items-center gap-2">
+                    <span class="material-icons">forest</span> Orchard
+                </h1>
+                <p class="text-xs text-gray-400 mt-1">Whisper Distributed System</p>
+            </div>
+            
+            <!-- Drop Zone -->
+            <div class="p-4 flex-grow flex flex-col gap-4">
+                <div 
+                    class="border-2 border-dashed border-blue-300 rounded-xl h-48 flex flex-col items-center justify-center bg-blue-50 hover:bg-blue-100 transition-colors cursor-pointer relative overflow-hidden"
+                    @dragover.prevent="isDragging = true"
+                    @dragleave.prevent="isDragging = false"
+                    @drop.prevent="handleDrop"
+                    @click="$refs.fileInput.click()"
+                    :class="{'bg-blue-200 border-blue-500': isDragging}"
+                >
+                    <input type="file" ref="fileInput" class="hidden" @change="handleFileSelect" accept="audio/*">
+                    <span class="material-icons text-5xl text-blue-400 mb-2">cloud_upload</span>
+                    <p class="text-sm text-blue-600 font-medium">音声ファイルをドロップ</p>
+                    <p class="text-xs text-blue-400 mt-1">またはクリックして選択</p>
+                    
+                    <!-- Selected File Overlay -->
+                    <div v-if="file" class="absolute inset-0 bg-white bg-opacity-90 flex flex-col items-center justify-center p-4">
+                        <span class="material-icons text-4xl text-green-500 mb-2">audio_file</span>
+                        <p class="text-sm font-bold text-gray-700 truncate w-full text-center">[[ file.name ]]</p>
+                        <button @click.stop="startProcess" class="mt-3 bg-orange-500 hover:bg-orange-600 text-white px-4 py-1 rounded-full text-sm shadow-lg transform transition hover:scale-105 flex items-center gap-1">
+                            <span class="material-icons text-sm">play_arrow</span> 開始
+                        </button>
+                    </div>
+                </div>
+
+                <!-- History List -->
+                <div class="flex-grow overflow-y-auto">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase mb-2 px-2 flex items-center justify-between">
+                        <span>Job History</span>
+                        <span v-if="history.length > 0" class="text-blue-500">[[ history.length ]]</span>
+                    </h3>
+                    <div v-if="history.length === 0" class="text-center py-8 text-gray-400">
+                        <span class="material-icons text-4xl mb-2 opacity-50">inbox</span>
+                        <p class="text-xs">No jobs yet</p>
+                    </div>
+                    <div v-for="item in history" :key="item.id" 
+                         @click="fetchJobDetail(item.id)"
+                         class="flex items-start gap-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition mb-1 border border-transparent hover:border-blue-200">
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5"
+                             :class="getStatusBadgeClass(item.status)">
+                            <span class="material-icons text-xs" v-if="item.status === 'completed'">check</span>
+                            <span class="material-icons text-xs" v-else-if="item.status === 'failed'">close</span>
+                            <span class="material-icons text-xs animate-spin" v-else>refresh</span>
+                        </div>
+                        <div class="flex-grow min-w-0">
+                            <p class="text-xs font-medium text-gray-700 truncate">[[ item.name ]]</p>
+                            <p class="text-xs text-gray-400">[[ formatTime(item.created_at) ]]</p>
+                            <div class="text-xs mt-1" :class="getStatusBadgeClass(item.status).split(' ')[1]">
+                                [[ item.status ]]
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Pipeline View -->
+        <main class="flex-grow flex flex-col relative bg-gradient-to-br from-blue-50 to-indigo-50 p-8 overflow-hidden">
+            
+            <!-- Status Bar -->
+            <div class="absolute top-6 right-8 flex gap-4">
+                <div class="bg-white px-4 py-2 rounded-full shadow-sm flex items-center gap-2 text-sm font-medium text-gray-600">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    Master: Online
+                </div>
+                <div class="bg-white px-4 py-2 rounded-full shadow-sm flex items-center gap-2 text-sm font-medium">
+                    <span class="material-icons text-sm" :class="stats.workers.online > 0 ? 'text-green-500' : 'text-gray-400'">memory</span>
+                    <span :class="stats.workers.online > 0 ? 'text-green-600' : 'text-gray-600'">
+                        Workers: [[ stats.workers.online ]]/[[ stats.workers.total ]]
+                    </span>
+                    <span v-if="stats.workers.busy > 0" class="text-yellow-600 ml-1">
+                        ([[ stats.workers.busy ]] busy)
+                    </span>
+                </div>
+                <div v-if="stats.jobs.processing > 0" class="bg-purple-50 px-4 py-2 rounded-full shadow-sm flex items-center gap-2 text-sm font-medium text-purple-600">
+                    <span class="material-icons text-sm animate-spin">refresh</span>
+                    Processing: [[ stats.jobs.processing ]]
+                </div>
+                <button @click="showAddWorker = true" 
+                        class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full shadow-lg transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-medium"
+                        title="Add Worker Node">
+                    <span class="material-icons text-sm">add_circle</span>
+                    Worker
+                </button>
+            </div>
+
+            <div class="flex-grow flex items-center justify-center w-full max-w-5xl mx-auto">
+                
+                <!-- Pipeline Container -->
+                <div class="w-full grid grid-cols-[1fr_auto_1fr] gap-0 items-center">
+                    
+                    <!-- 1. Purifier (Tank) -->
+                    <div class="relative flex flex-col items-center">
+                        <div class="relative w-64 h-64">
+                            <!-- Tank Body -->
+                            <div class="absolute inset-0 bg-white rounded-full shadow-2xl border-4 flex items-center justify-center overflow-hidden z-10 transition-all duration-500"
+                                 :class="[
+                                     usePurifier ? 'border-blue-100' : 'border-gray-200',
+                                     {'border-blue-400 shadow-blue-200': usePurifier && currentJobStatus === 'purifying'},
+                                     {'border-green-400 shadow-green-200': purifierCompleted}
+                                 ]">
+                                
+                                <!-- Water Level -->
+                                <div class="absolute bottom-0 left-0 w-full bg-blue-500 opacity-20 transition-all duration-1000 ease-in-out"
+                                     :style="{height: (usePurifier && currentJobStatus === 'purifying') ? '100%' : '0%', opacity: usePurifier ? 0.2 : 0}"></div>
+                                
+                                <!-- Ripples -->
+                                <div v-if="usePurifier && currentJobStatus === 'purifying'" class="ripple-effect active"></div>
+                                <div v-if="usePurifier && currentJobStatus === 'purifying'" class="ripple-effect active" style="animation-delay: 1s"></div>
+
+                                <!-- Icon -->
+                                <div class="relative z-20 text-center">
+                                    <span class="material-icons text-6xl mb-2 transition-transform duration-500"
+                                          :class="[
+                                              usePurifier ? 'text-blue-500' : 'text-gray-400',
+                                              {'scale-110': usePurifier && currentJobStatus === 'purifying'},
+                                              {'text-green-500': purifierCompleted}
+                                          ]">water_drop</span>
+                                    <h2 class="text-xl font-bold" :class="usePurifier ? 'text-gray-700' : 'text-gray-400'">Purifier</h2>
+                                    <p class="text-xs text-gray-400 mb-2">Noise Reduction</p>
+                                    
+                                    <!-- ON/OFF Switch (center bottom) -->
+                                    <button @click="usePurifier = !usePurifier" 
+                                            class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all shadow-md mx-auto"
+                                            :class="usePurifier ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-400 text-white hover:bg-gray-500'">
+                                        <span class="material-icons text-sm">[[ usePurifier ? 'toggle_on' : 'toggle_off' ]]</span>
+                                        <span>[[ usePurifier ? 'ON' : 'OFF' ]]</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Status Text -->
+                        <div class="mt-6 text-center h-8">
+                            <span v-if="purifierCompleted" class="text-green-600 font-medium">
+                                <span class="material-icons align-middle text-sm mr-1">check_circle</span>
+                                Purifier complete
+                            </span>
+                            <span v-else-if="!usePurifier && currentJobStatus === 'purifying'" class="text-gray-500 font-medium">
+                                <span class="material-icons align-middle text-sm mr-1">block</span>
+                                Purifier bypassed
+                            </span>
+                            <span v-else-if="usePurifier && currentJobStatus === 'purifying'" class="text-blue-600 font-medium animate-pulse">
+                                <span class="material-icons align-middle text-sm mr-1">auto_fix_high</span>
+                                Jetson Nano is purifying...
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Pipe -->
+                    <div class="w-32 h-4 bg-gray-200 rounded-full relative overflow-hidden mx-[-10px] z-0">
+                        <div class="absolute inset-0 water-flow opacity-0 transition-opacity duration-300"
+                             :class="{'opacity-100': status === 'transcribing'}"></div>
+                    </div>
+
+                    <!-- 2. Orchard (Grid) -->
+                    <div class="relative flex flex-col items-center">
+                        <div class="w-64 h-64 bg-white rounded-3xl shadow-2xl border-4 border-orange-100 p-6 relative z-10 transition-all duration-500"
+                             :class="[
+                                 {'border-orange-300 shadow-orange-200': currentJobStatus === 'processing'},
+                                 {'border-green-300 shadow-green-200': currentJobStatus === 'aggregating'},
+                                 workers.length === 1 ? 'flex items-center justify-center' : 'grid gap-4',
+                                 workers.length === 2 ? 'grid-cols-2' : workers.length === 3 ? 'grid-cols-3' : workers.length >= 4 ? 'grid-cols-2' : ''
+                             ]">
+                            
+                            <!-- Trees (Workers) -->
+                            <div v-for="(worker, i) in workers" :key="worker.id" 
+                                 class="bg-orange-50 rounded-xl flex flex-col items-center justify-center relative overflow-hidden"
+                                 :class="workers.length === 1 ? 'w-32 h-32' : ''"
+                                 :title="`${worker.url} - ${worker.status || 'online'}`">
+                                
+                                <!-- Progress Bar Background -->
+                                <div class="absolute bottom-0 left-0 w-full bg-orange-200 transition-all duration-300"
+                                     :style="{height: ((worker.status === 'busy' || status === 'transcribing') && worker.progress) ? (worker.progress + '%') : '0%'}"></div>
+                                
+                                <!-- Status Indicator -->
+                                <div class="absolute top-1 right-1 z-20">
+                                    <span class="material-icons text-xs" 
+                                          :class="getWorkerStatusColor(worker.status || 'online')">
+                                        [[ getWorkerStatusIcon(worker.status || 'online') ]]
+                                    </span>
+                                </div>
+                                
+                                <!-- Tree Icon -->
+                                <span class="material-icons text-3xl relative z-10 transition-all duration-500"
+                                      :class="[
+                                          (worker.status === 'busy' || status === 'transcribing') ? 'text-green-600 transform scale-110 animate-pulse' : 'text-gray-300'
+                                      ]">
+                                    park
+                                </span>
+                                <span class="text-xs font-bold relative z-10 mt-1 text-gray-500">#[[ i + 1 ]]</span>
+                                
+                                <!-- Current Chunk Display -->
+                                <div v-if="worker.current_chunk" class="absolute bottom-1 left-0 right-0 text-center">
+                                    <span class="text-xs bg-white bg-opacity-80 px-1 rounded text-gray-600">
+                                        C[[ worker.current_chunk ]]
+                                    </span>
+                                </div>
+                            </div>
+
+                        </div>
+                         <!-- Status Text -->
+                         <div class="mt-6 text-center h-8">
+                            <span v-if="currentJobStatus === 'processing'" class="text-orange-600 font-medium animate-pulse">
+                                <span class="material-icons align-middle text-sm mr-1">sync</span>
+                                Workers are harvesting text...
+                            </span>
+                            <span v-else-if="currentJobStatus === 'aggregating'" class="text-green-600 font-medium animate-pulse">
+                                <span class="material-icons align-middle text-sm mr-1">merge</span>
+                                Aggregating results...
+                            </span>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Result Modal (Harvest Basket) -->
+            <div v-if="resultText" class="absolute bottom-0 left-0 w-full h-1/2 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] transform transition-transform duration-500 flex flex-col z-30">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-orange-50 rounded-t-3xl">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-white p-2 rounded-full shadow-sm">
+                            <span class="material-icons text-orange-500">shopping_basket</span>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-gray-800">Harvest Result</h3>
+                            <p class="text-xs text-gray-500">[[ file?.name ]]</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button @click="toggleTimestamps" 
+                                class="px-3 py-2 rounded-full transition text-sm font-medium flex items-center gap-1"
+                                :class="showTimestamps ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                                title="Toggle Timestamps">
+                            <span class="material-icons text-sm">schedule</span>
+                            <span v-if="showTimestamps">タイムスタンプ表示中</span>
+                            <span v-else>タイムスタンプ</span>
+                        </button>
+                        <button @click="copyText" class="p-2 hover:bg-white rounded-full transition text-gray-500" title="Copy">
+                            <span class="material-icons">content_copy</span>
+                        </button>
+                        <button @click="resultText = ''; resultSegments = []" class="p-2 hover:bg-white rounded-full transition text-gray-500" title="Close">
+                            <span class="material-icons">close</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-grow p-8 overflow-y-auto bg-white">
+                    <!-- タイムスタンプなし表示 -->
+                    <p v-if="!showTimestamps" class="text-gray-700 leading-loose whitespace-pre-wrap font-serif text-lg">[[ resultText ]]</p>
+                    
+                    <!-- タイムスタンプあり表示 -->
+                    <div v-else class="space-y-4">
+                        <div v-for="(segment, i) in resultSegments" :key="i" 
+                             class="border-l-4 border-blue-400 pl-4 py-2 hover:bg-blue-50 transition rounded-r">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-xs font-mono bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                    [[ segment.start ]] → [[ segment.end ]]
+                                </span>
+                                <span class="text-xs text-gray-400">
+                                    ([[ Math.floor(segment.start_ms / 1000) ]]s - [[ Math.floor(segment.end_ms / 1000) ]]s)
+                                </span>
+                            </div>
+                            <p class="text-gray-700 leading-relaxed">[[ segment.text ]]</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+        
+        <!-- Error Modal -->
+        <div v-if="errorMessage" 
+             class="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style="background-color: rgba(0, 0, 0, 0.5);" 
+             @click="errorMessage = ''">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full modal-enter" 
+                 @click.stop>
+                <div class="bg-gradient-to-r from-red-500 to-orange-500 p-6 rounded-t-2xl">
+                    <div class="flex items-center gap-3 text-white">
+                        <div class="bg-white bg-opacity-20 p-3 rounded-full">
+                            <span class="material-icons text-3xl">error_outline</span>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold">エラー</h3>
+                            <p class="text-sm text-red-100">処理を実行できません</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <p class="text-gray-700 text-lg mb-6">[[ errorMessage ]]</p>
+                    <button @click="errorMessage = ''" 
+                            class="w-full bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white font-bold py-3 px-6 rounded-xl transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-2">
+                        <span class="material-icons">check_circle</span>
+                        <span>了解</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Job Detail Modal -->
+        <div v-if="showJobDetail && selectedJob" 
+             class="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style="background-color: rgba(0, 0, 0, 0.5);" 
+             @click="showJobDetail = false">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full modal-enter overflow-hidden" 
+                 @click.stop>
+                <div class="bg-gradient-to-r from-blue-500 to-purple-500 p-6 rounded-t-2xl">
+                    <div class="flex items-center gap-3 text-white">
+                        <div class="bg-white bg-opacity-20 p-3 rounded-full">
+                            <span class="material-icons text-3xl">info</span>
+                        </div>
+                        <div class="flex-grow">
+                            <h3 class="text-xl font-bold">ジョブ詳細</h3>
+                            <p class="text-sm text-blue-100">Job ID: [[ selectedJob.job_id ]]</p>
+                        </div>
+                        <div class="px-3 py-1 rounded-full text-sm font-bold"
+                             :class="getStatusBadgeClass(selectedJob.status)">
+                            [[ selectedJob.status ]]
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6 max-h-96 overflow-y-auto">
+                    <!-- 基本情報 -->
+                    <div class="mb-6">
+                        <h4 class="text-sm font-bold text-gray-600 mb-2">基本情報</h4>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div class="text-xs text-gray-500">ファイル名</div>
+                                <div class="text-sm font-medium text-gray-800">[[ selectedJob.filename || 'N/A' ]]</div>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div class="text-xs text-gray-500">ステータス</div>
+                                <div class="text-sm font-medium" :class="getStatusBadgeClass(selectedJob.status).split(' ')[1]">
+                                    [[ selectedJob.status ]]
+                                </div>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div class="text-xs text-gray-500">作成日時</div>
+                                <div class="text-sm font-medium text-gray-800">[[ formatTime(selectedJob.created_at) ]]</div>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div class="text-xs text-gray-500">完了日時</div>
+                                <div class="text-sm font-medium text-gray-800">[[ formatTime(selectedJob.completed_at) ]]</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- チャンク処理状況 -->
+                    <div v-if="selectedJob.chunks && selectedJob.chunks.length > 0" class="mb-6">
+                        <h4 class="text-sm font-bold text-gray-600 mb-2 flex items-center justify-between">
+                            <span>チャンク処理状況</span>
+                            <span class="text-xs text-gray-500">
+                                [[ selectedJob.chunks.filter(c => c.status === 'completed').length ]] / [[ selectedJob.chunks.length ]]
+                            </span>
+                        </h4>
+                        <div class="space-y-2 max-h-48 overflow-y-auto">
+                            <div v-for="chunk in selectedJob.chunks" :key="chunk.chunk_id"
+                                 class="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                                <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs"
+                                     :class="getStatusBadgeClass(chunk.status)">
+                                    <span class="material-icons text-xs" v-if="chunk.status === 'completed'">check</span>
+                                    <span class="material-icons text-xs" v-else-if="chunk.status === 'failed'">close</span>
+                                    <span class="material-icons text-xs animate-spin" v-else>refresh</span>
+                                </div>
+                                <div class="flex-grow">
+                                    <div class="text-xs font-medium text-gray-700">Chunk #[[ chunk.chunk_id ]]</div>
+                                    <div class="text-xs text-gray-500" v-if="chunk.worker_url">
+                                        Worker: [[ chunk.worker_url.split('//')[1] ]]
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-500" v-if="chunk.duration">
+                                    [[ chunk.duration.toFixed(1) ]]s
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- エラー情報 -->
+                    <div v-if="selectedJob.error" class="mb-6">
+                        <h4 class="text-sm font-bold text-red-600 mb-2">エラー情報</h4>
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                            <p class="text-sm text-red-700">[[ selectedJob.error ]]</p>
+                        </div>
+                    </div>
+
+                    <!-- 結果テキスト -->
+                    <div v-if="selectedJob.result && selectedJob.result.text" class="mb-4">
+                        <h4 class="text-sm font-bold text-gray-600 mb-2">文字起こし結果</h4>
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-32 overflow-y-auto">
+                            <p class="text-sm text-gray-700 whitespace-pre-wrap">[[ selectedJob.result.text ]]</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6 bg-gray-50 border-t border-gray-200">
+                    <button @click="showJobDetail = false" 
+                            class="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-bold py-3 px-6 rounded-xl transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-2">
+                        <span class="material-icons">close</span>
+                        <span>閉じる</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Add Worker Modal -->
+        <div v-if="showAddWorker" 
+             class="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style="background-color: rgba(0, 0, 0, 0.5);" 
+             @click="showAddWorker = false">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full modal-enter" 
+                 @click.stop>
+                <div class="bg-gradient-to-r from-orange-500 to-yellow-500 p-6 rounded-t-2xl">
+                    <div class="flex items-center gap-3 text-white">
+                        <div class="bg-white bg-opacity-20 p-3 rounded-full">
+                            <span class="material-icons text-3xl">add_circle_outline</span>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold">Worker Node 追加</h3>
+                            <p class="text-sm text-orange-100">新しいワーカーを登録</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Worker URL</label>
+                    <input v-model="newWorkerUrl" 
+                           type="text" 
+                           placeholder="http://192.168.1.100:8080"
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition"
+                           @keyup.enter="addWorker">
+                    <p class="text-xs text-gray-500 mt-2">※ Worker NodeのIPアドレスとポート番号を入力してください</p>
+                    
+                    <!-- 登録済みワーカーリスト -->
+                    <div v-if="allWorkers.length > 0" class="mt-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">登録済み Worker</label>
+                        <div class="space-y-2 max-h-40 overflow-y-auto">
+                            <div v-for="worker in allWorkers" :key="worker" 
+                                 class="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                                <span class="text-sm text-gray-700 font-mono truncate">[[worker]]</span>
+                                <button @click="removeWorker(worker)" 
+                                        class="text-red-500 hover:text-red-700 transition">
+                                    <span class="material-icons text-sm">delete</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3 mt-6">
+                        <button @click="showAddWorker = false" 
+                                class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 px-6 rounded-xl transition-all">
+                            キャンセル
+                        </button>
+                        <button @click="addWorker" 
+                                class="flex-1 bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white font-bold py-3 px-6 rounded-xl transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-2">
+                            <span class="material-icons">add</span>
+                            <span>追加</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
