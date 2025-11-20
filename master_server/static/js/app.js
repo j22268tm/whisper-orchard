@@ -23,6 +23,7 @@ createApp({
         const currentJobStatus = ref('idle');
         const usePurifier = ref(true);
         const purifierCompleted = ref(false);
+        const purifierBypassed = ref(false);
         let pollInterval = null;
 
         // Purifier設定をAPI経由で保存
@@ -113,96 +114,83 @@ createApp({
             }
         };
 
-        // 現在のジョブ状態をポーリング
-        const pollCurrentJob = async () => {
-            if (!currentJobId.value) return;
-            
-            try {
-                const response = await fetch(`/jobs/${currentJobId.value}`);
-                const data = await response.json();
+        // Socket.IOセットアップ
+        const socket = io();
 
-                // 前のステータスを保存
-                const previousStatus = currentJobStatus.value;
-                currentJobStatus.value = data.status;
+        socket.on('connect', () => {
+            console.log('[socket] connected');
+        });
 
-                console.log('[pollCurrentJob] status:', data.status, '| previousStatus:', previousStatus, '| purifierCompleted:', purifierCompleted.value, '| status(ref):', status.value);
-
-                if (data.status === 'purifier_completed') {
-                    console.log('[purifier] purifier_completed検知 → 完了アニメーション開始');
-                    purifierCompleted.value = true;
-                    currentJobStatus.value = 'purifier_completed'; 
-                    status.value = 'idle';
-                    // 1.5秒後にフラグをリセット（完了アニメーション表示用）
-                    setTimeout(() => {
-                        purifierCompleted.value = false;
-                        console.log('[purifier] 完了アニメーション終了 → purifierCompleted=false');
-                    }, 1500);
-                }
-
-                // ステータスに応じてUI更新
-                if (data.status === 'purifying') {
-                    if (status.value !== 'cleaning') {
-                        console.log('[purifier] purifying検知 → cleaningアニメーション開始');
-                    }
-                    status.value = 'cleaning';
-                } else if (data.status === 'splitting' || data.status === 'processing' || data.status === 'aggregating') {
-                    if (status.value !== 'transcribing') {
-                        console.log('[pipe/tree] splitting/processing/aggregating検知 → transcribingアニメーション開始');
-                    }
-                    status.value = 'transcribing';
-                    if (data.chunks && data.chunks.length > 0) {
-                        const completedChunks = data.chunks.filter(c => c.status === 'completed').length;
-                        const totalChunks = data.chunks.length;
-                        workers.value.forEach(w => {
-                            const processingChunk = data.chunks.find(c => 
-                                c.status === 'processing' && c.worker_url === w.url
-                            );
-                            
-                            if (processingChunk) {
-                                // 処理中の場合
-                                w.status = 'busy';
-                                w.current_chunk = processingChunk.chunk_id.split('_').pop();
-                                w.progress = Math.min(95, (completedChunks / totalChunks) * 100 + Math.random() * 10);
-                            } else {
-                                // アイドルまたは完了
-                                w.status = 'online';
-                                w.current_chunk = null;
-                                w.progress = (completedChunks / totalChunks) * 100;
-                            }
-                        });
-                    }
-                } else if (data.status === 'completed') {
-                    workers.value.forEach(w => {
-                        w.progress = 100;
+        // ジョブ更新イベント
+        socket.on('job_update', (data) => {
+            if (!data || !data.status) return;
+            const previousStatus = currentJobStatus.value;
+            currentJobStatus.value = data.status;
+            // 状態別UI反映
+            if (data.status === 'purifier_completed') {
+                purifierCompleted.value = true;
+                status.value = 'cleaning';
+                setTimeout(() => { purifierCompleted.value = false; }, 1500);
+            } else if (data.status === 'purifier_bypassed') {
+                purifierBypassed.value = true;
+                status.value = 'cleaning';
+                setTimeout(() => { purifierBypassed.value = false; }, 1200);
+            } else if (data.status === 'purifying') {
+                status.value = 'cleaning';
+            } else if (['splitting','processing','aggregating'].includes(data.status)) {
+                status.value = 'transcribing';
+            } else if (data.status === 'completed') {
+                status.value = 'idle';
+            } else if (data.status === 'failed') {
+                status.value = 'idle';
+                errorMessage.value = data.error || 'ジョブが失敗しました';
+            }
+            // チャンク進捗更新
+            if (data.chunks && data.chunks.length > 0) {
+                const completedChunks = data.chunks.filter(c => c.status === 'completed').length;
+                const totalChunks = data.chunks.length;
+                workers.value.forEach(w => {
+                    const processingChunk = data.chunks.find(c => c.status === 'processing' && c.worker_url === w.url);
+                    if (processingChunk) {
+                        w.status = 'busy';
+                        w.current_chunk = processingChunk.chunk_id.split('_').pop();
+                        w.progress = Math.min(95, (completedChunks / totalChunks) * 100 + Math.random() * 10);
+                    } else {
                         w.status = 'online';
                         w.current_chunk = null;
-                    });
-                    stopPolling();
-                } else if (data.status === 'failed') {
-                    stopPolling();
-                    errorMessage.value = `ジョブが失敗しました\n\n${data.error || '不明なエラー'}`;
-                    status.value = 'idle';
-                }
-            } catch (e) {
-                console.error('Failed to poll job:', e);
+                        w.progress = (completedChunks / totalChunks) * 100;
+                    }
+                });
             }
+            // 完了時結果表示
+            if (data.status === 'completed' && data.result && data.result.text) {
+                resultSegments.value = data.result.segments || [];
+                finishProcess(data.result.text);
+            }
+        });
+
+        const stopPolling = () => {}; // 互換のため残すが未使用
+
+        const copySegments = () => {
+            if (!resultSegments.value || resultSegments.value.length === 0) return;
+            const text = resultSegments.value
+                .map(s => `${s.start} → ${s.end}  ${s.text}`)
+                .join('\n');
+            navigator.clipboard.writeText(text);
         };
 
-        const startPolling = () => {
-            stopPolling();
-            pollInterval = setInterval(() => {
-                fetchStats();
-                fetchJobs();
-                fetchWorkers();
-                pollCurrentJob();
-            }, 2000);
+        const copySelectedJobText = () => {
+            if (!selectedJob.value || !selectedJob.value.result) return;
+            const text = selectedJob.value.result.text || '';
+            navigator.clipboard.writeText(text);
         };
 
-        const stopPolling = () => {
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-            }
+        const copySelectedJobSegments = () => {
+            if (!selectedJob.value || !selectedJob.value.result || !selectedJob.value.result.segments) return;
+            const text = selectedJob.value.result.segments
+                .map(s => `${s.start} → ${s.end}  ${s.text}`)
+                .join('\n');
+            navigator.clipboard.writeText(text);
         };
 
         const handleDrop = (e) => {
@@ -226,57 +214,34 @@ createApp({
             
             const formData = new FormData();
             formData.append('file', file.value);
+            // 初期ステータス（実際のフェーズはサーバからのイベントで更新）
+            status.value = usePurifier.value ? 'cleaning' : 'transcribing';
+            currentJobStatus.value = usePurifier.value ? 'purifying' : 'splitting';
 
-            status.value = 'cleaning';
-            currentJobStatus.value = 'purifying';
-            
             try {
-                const responsePromise = fetch('/submit', {
+                const response = await fetch('/submit', {
                     method: 'POST',
                     body: formData
                 });
-
-                await new Promise(r => setTimeout(r, 5000));
-
-                status.value = 'transcribing';
-                
-                const progressInterval = setInterval(() => {
-                    workers.value.forEach(w => {
-                        if (w.progress < 95) {
-                            w.progress += Math.random() * 15;
-                        }
-                    });
-                }, 300);
-                
-                const response = await responsePromise;
-                clearInterval(progressInterval);
-                
                 if (!response.ok) {
                     throw new Error('Server returned error: ' + response.status);
                 }
-
                 const data = await response.json();
-                
-                // ジョブIDを保存してポーリング開始
-                if (data.job_id) {
-                    currentJobId.value = data.job_id;
-                    startPolling();
-                }
-                
                 if (data.status === 'error') {
                     throw new Error(data.message || 'Unknown error');
                 }
-                
-                workers.value.forEach(w => w.progress = 100);
-                await new Promise(r => setTimeout(r, 500));
-                
-                resultSegments.value = data.result.segments || [];
-                
-                finishProcess(data.result.text);
-
+                if (data.job_id) {
+                    currentJobId.value = data.job_id;
+                    socket.emit('subscribe_job', { job_id: data.job_id });
+                } else {
+                    throw new Error('job_idが取得できませんでした');
+                }
+                // 結果は非同期でjob_update(completed)イベントから受信するためここでは処理しない
             } catch (e) {
                 errorMessage.value = 'エラーが発生しました\n\n' + e.message;
                 status.value = 'idle';
+                currentJobId.value = null;
+                currentJobStatus.value = 'idle';
                 workers.value.forEach(w => w.progress = 0);
             }
         };
@@ -397,12 +362,11 @@ createApp({
             return colors[workerStatus] || 'text-gray-500';
         };
 
-        // 初期ロード時にデータ取得とポーリング開始
+        // 初期ロード時にデータ取得 (ポーリングは廃止)
         fetchWorkers();
         fetchStats();
         fetchJobs();
         loadPurifierPreference();
-        startPolling();
 
         // usePurifierの変更を監視
         Vue.watch(() => usePurifier.value, (newValue) => {
@@ -428,10 +392,14 @@ createApp({
             currentJobStatus,
             usePurifier,
             purifierCompleted,
+            purifierBypassed,
             handleDrop,
             handleFileSelect,
             startProcess,
             copyText,
+            copySegments,
+            copySelectedJobText,
+            copySelectedJobSegments,
             toggleTimestamps,
             addWorker,
             removeWorker,

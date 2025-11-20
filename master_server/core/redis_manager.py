@@ -44,14 +44,28 @@ class RedisManager:
             return [k for k in self._memory_store.keys() if fnmatch.fnmatch(k, pattern)]
     
     
-    def update_worker_status(self, worker_url, status='online', metadata=None):
+    def update_worker_status(self, worker_url, status='online', metadata=None, is_processing=False):
 
         key = f"worker:{worker_url}"
+        # 既存データがあればpending_chunksとperformance_historyを維持
+        existing = self._get(key)
+        pending_chunks = 0
+        performance_history = []
+        if existing:
+            try:
+                existing_data = json.loads(existing)
+                pending_chunks = existing_data.get('pending_chunks', 0)
+                performance_history = existing_data.get('performance_history', [])
+            except:
+                pass
         data = {
             'url': worker_url,
             'status': status,
+            'is_processing': is_processing,
             'last_updated': datetime.now().isoformat(),
-            'metadata': metadata or {}
+            'metadata': metadata or {},
+            'pending_chunks': pending_chunks,
+            'performance_history': performance_history  # [{chunk_duration_sec, processing_time_sec, speed_ratio}]
         }
         self._set(key, json.dumps(data), ex=300)
     
@@ -61,6 +75,10 @@ class RedisManager:
         if data:
             return json.loads(data)
         return None
+    
+    def get_worker_info(self, worker_url):
+        """get_worker_statusのエイリアス"""
+        return self.get_worker_status(worker_url)
     
     def get_all_workers(self):
         keys = self._keys("worker:*")
@@ -80,6 +98,17 @@ class RedisManager:
     def mark_worker_idle(self, worker_url):
         self.update_worker_status(worker_url, status='online')
     
+    def set_worker_processing(self, worker_url, is_processing):
+        key = f"worker:{worker_url}"
+        existing = self._get(key)
+        if existing:
+            try:
+                data = json.loads(existing)
+                data['is_processing'] = is_processing
+                self._set(key, json.dumps(data), ex=300)
+            except:
+                pass
+    
     def add_worker(self, worker_url):
         self.update_worker_status(worker_url, status='online')
     
@@ -90,6 +119,54 @@ class RedisManager:
     def get_worker_urls(self):
         workers = self.get_all_workers()
         return [w['url'] for w in workers]
+    
+    def increment_worker_pending(self, worker_url):
+        key = f"worker:{worker_url}"
+        data = self._get(key)
+        if data:
+            worker_data = json.loads(data)
+            worker_data['pending_chunks'] = worker_data.get('pending_chunks', 0) + 1
+            self._set(key, json.dumps(worker_data), ex=300)
+    
+    def decrement_worker_pending(self, worker_url):
+        key = f"worker:{worker_url}"
+        data = self._get(key)
+        if data:
+            worker_data = json.loads(data)
+            current = worker_data.get('pending_chunks', 0)
+            worker_data['pending_chunks'] = max(0, current - 1)
+            self._set(key, json.dumps(worker_data), ex=300)
+    
+    def record_worker_performance(self, worker_url, chunk_duration_sec, processing_time_sec):
+        """チャンク処理のパフォーマンスを記録 (最大20件)"""
+        key = f"worker:{worker_url}"
+        data = self._get(key)
+        if data:
+            worker_data = json.loads(data)
+            history = worker_data.get('performance_history', [])
+            speed_ratio = processing_time_sec / chunk_duration_sec if chunk_duration_sec > 0 else 1.0
+            history.append({
+                'chunk_duration_sec': chunk_duration_sec,
+                'processing_time_sec': processing_time_sec,
+                'speed_ratio': speed_ratio,
+                'timestamp': datetime.now().isoformat()
+            })
+            # 最新20件のみ保持
+            worker_data['performance_history'] = history[-20:]
+            self._set(key, json.dumps(worker_data), ex=300)
+    
+    def get_worker_avg_speed_ratio(self, worker_url):
+        """平均速度比を取得 (低いほど高速)"""
+        worker_info = self.get_worker_info(worker_url)
+        if not worker_info:
+            return 1.0
+        history = worker_info.get('performance_history', [])
+        if not history:
+            return 1.0
+        # 最新10件の平均
+        recent = history[-10:]
+        avg = sum(h['speed_ratio'] for h in recent) / len(recent)
+        return avg
     
     
     def set_user_preference(self, user_id, key, value):

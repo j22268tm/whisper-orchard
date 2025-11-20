@@ -4,3 +4,4 @@ pydub==0.25.1
 werkzeug==3.0.1
 audioop-lts==0.2.2
 redis==5.0.1
+flask-socketio==5.3.6

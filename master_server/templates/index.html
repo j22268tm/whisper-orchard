@@ -9,6 +9,8 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <!-- Socket.IO client via CDN (server does not serve JS in this mode) -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
 </head>
 <body class="bg-blue-50 text-gray-800 h-screen flex flex-col overflow-hidden">
 
@@ -68,7 +70,7 @@
                             <span class="material-icons text-xs animate-spin" v-else>refresh</span>
                         </div>
                         <div class="flex-grow min-w-0">
-                            <p class="text-xs font-medium text-gray-700 truncate">[[ item.name ]]</p>
+                            <p class="text-xs font-medium text-gray-700 truncate">[[ item.name ]] <span class="text-gray-400 font-mono">([[ item.id.slice(0,8) ]])</span></p>
                             <p class="text-xs text-gray-400">[[ formatTime(item.created_at) ]]</p>
                             <div class="text-xs mt-1" :class="getStatusBadgeClass(item.status).split(' ')[1]">
                                 [[ item.status ]]
@@ -161,7 +163,7 @@
                                 <span class="material-icons align-middle text-sm mr-1">check_circle</span>
                                 Purifier complete
                             </span>
-                            <span v-else-if="!usePurifier && currentJobStatus === 'purifying'" class="text-gray-500 font-medium">
+                            <span v-else-if="purifierBypassed" class="text-gray-500 font-medium">
                                 <span class="material-icons align-middle text-sm mr-1">block</span>
                                 Purifier bypassed
                             </span>
@@ -249,7 +251,7 @@
                         </div>
                         <div>
                             <h3 class="font-bold text-gray-800">Harvest Result</h3>
-                            <p class="text-xs text-gray-500">[[ file?.name ]]</p>
+                            <p class="text-xs text-gray-500">[[ file?.name ]] <span v-if="currentJobId" class="font-mono text-gray-400">[JOB: [[ currentJobId.slice(0,8) ]] ]</span></p>
                         </div>
                     </div>
                     <div class="flex gap-2">
@@ -261,8 +263,13 @@
                             <span v-if="showTimestamps">タイムスタンプ表示中</span>
                             <span v-else>タイムスタンプ</span>
                         </button>
-                        <button @click="copyText" class="p-2 hover:bg-white rounded-full transition text-gray-500" title="Copy">
-                            <span class="material-icons">content_copy</span>
+                        <button @click="copyText" class="px-3 py-2 rounded-full transition text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1" title="Copy Plain">
+                            <span class="material-icons text-sm">content_copy</span>
+                            <span>テキスト</span>
+                        </button>
+                        <button @click="copySegments" class="px-3 py-2 rounded-full transition text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1" title="Copy with Timestamps">
+                            <span class="material-icons text-sm">content_copy</span>
+                            <span>タイムスタンプ</span>
                         </button>
                         <button @click="resultText = ''; resultSegments = []" class="p-2 hover:bg-white rounded-full transition text-gray-500" title="Close">
                             <span class="material-icons">close</span>
@@ -410,9 +417,32 @@
 
                     <!-- 結果テキスト -->
                     <div v-if="selectedJob.result && selectedJob.result.text" class="mb-4">
-                        <h4 class="text-sm font-bold text-gray-600 mb-2">文字起こし結果</h4>
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-sm font-bold text-gray-600">文字起こし結果</h4>
+                            <button @click="copySelectedJobText" class="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-1">
+                                <span class="material-icons text-xs">content_copy</span>
+                                コピー
+                            </button>
+                        </div>
                         <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-32 overflow-y-auto">
                             <p class="text-sm text-gray-700 whitespace-pre-wrap">[[ selectedJob.result.text ]]</p>
+                        </div>
+                    </div>
+
+                    <!-- タイムスタンプ付き結果 -->
+                    <div v-if="selectedJob.result && selectedJob.result.segments && selectedJob.result.segments.length" class="mb-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-sm font-bold text-gray-600">タイムスタンプ付き</h4>
+                            <button @click="copySelectedJobSegments" class="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-1">
+                                <span class="material-icons text-xs">content_copy</span>
+                                コピー
+                            </button>
+                        </div>
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-40 overflow-y-auto space-y-2">
+                            <div v-for="(segment, i) in selectedJob.result.segments" :key="i" class="text-sm">
+                                <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded mr-2">[[ segment.start ]] → [[ segment.end ]]</span>
+                                <span class="text-gray-700">[[ segment.text ]]</span>
+                            </div>
                         </div>
                     </div>
                 </div>
